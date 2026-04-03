@@ -21,6 +21,7 @@ We thank those who support open science. Without them, developing IFUM was impos
     - [Command-line Arguments](#command-line-arguments)
     - [Targeting a Specific GPU](#targeting-a-specific-gpu)
 - [Output CSV File](#output-csv-file)
+- [License](#license)
 - [(very important) Known Limitations](#known-limitations)
 
 ## Citation
@@ -166,6 +167,14 @@ name,dG(kcal/mol)
 MyUb_WT,0.20
 MyUb_R1117A,-0.05
 ```
+
+## License
+
+This project is released under the [MIT License](LICENSE).
+
+### Third-party dependencies
+
+IFUM uses third-party components, including ESM and ProtT5. The MIT license for IFUM applies to the code in this repository, while each third-party dependency keeps its own license terms. If you redistribute IFUM, you should also comply with the license requirements of all bundled or installed dependencies.
 
 ## Known Limitations
 
