@@ -4,21 +4,21 @@
 ---datasets---
 megascale:
     (processed) K50 dG dataset.csv:
-        name[0], aa_seq[27], deltaG[22], mut_type[28], +a
+        format: name, aa_seq, deltaG, mut_type, +a
     alphafold .PDB(WT):
-        ATOM      1  N   VAL A   1       3.830   6.584  12.265  1.00 67.14           N  
+        format: ATOM      1  N   VAL A   1       3.830   6.584  12.265  1.00 67.14           N  
         # if 3d atom coordinates between WT and mut doesnt that differ, use pdb data to every megascale proteins?
         # then apply esmfold to MGnify dataset only
 
 MGnify stability.csv(seq):
-    name, AA seq, deltaG, +a
+    format: name, aa_seq, deltaG, +a
 '''
 '''
 ---models---
-esmif: backbone atom coordinate -> (structure embedding?) -> aa sequence
+esmif: fixed backbone atom 3d coordinate -> (structure embedding?) -> aa sequence
 prott5: aa sequence -> LM embedding(seq embedding)
 
-esmfold: aa seq->language model feature(internal repr.: pair rep, seq rep)->3d atomic coordinate
+esmfold: aa seq->language model feature(embedding)->backbone 3d atomic coordinate
 '''
 
 import pandas as pd
@@ -36,7 +36,6 @@ import typing as T
 import logging
 from timeit import default_timer as timer
 import gc
-import json
 
 # Logger Setup
 logger = logging.getLogger(__name__)
@@ -49,6 +48,7 @@ logger.addHandler(console_handler)
 warnings.filterwarnings('ignore')
 
 '''
+# pseudocode
 parse csv directory(input) & pdb directory(output)
 for csv files in csv directory:
     get [name, aa_seq, deltaG]columns
@@ -65,6 +65,9 @@ def get_args():
     parser = argparse.ArgumentParser(description='Generate PDB files from CSV directory')
     parser.add_argument('--csv_dir', type=str, required=True, help='Directory containing .csv files') # megascale & mgnify csv files
     parser.add_argument('--pdb_dir', type=str, required=True, help='Output directory for .pdb files') # fixed atom 3D coordinate
+    parser.add_argument('--num_recycles', type=int, default=None, help='Number of recycles for ESMFold')
+    parser.add_argument('--chunk_size', type=int, default=None, help='Chunk size for ESMFold optimization')
+    parser.add_argument('--max_tokens_per_batch', type=int, default=1024, help='Max tokens per batch')
     return parser.parse_args()
 
 def process_csv_files(csv_dir):
@@ -80,16 +83,17 @@ def process_csv_files(csv_dir):
         logger.info(f"Processing CSV file: {csv_file}")
 
         if 'name' not in file.columns or 'aa_seq' not in file.columns:
-            logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'. Found: {list(df.columns)}")
+            logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'. Found: {list(file.columns)}")
             continue
 
-        processed_csv = pd.concat([processed_csv, file['name','aa_seq','deltaG']], ignore_index=True)
+        cols = [c for c in ["name", "aa_seq", "deltaG"] if c in file.columns]
+        processed_csv = pd.concat([processed_csv, file[cols]], ignore_index=True)
 
-        def clean_seq(input_seq:str):
-            input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
-            return input_seq
-        processed_csv.apply(clean_seq(), axis=1)
-        processed_csv = processed_csv.drop_duplicates(subset=['aa_seq'])
+    def clean_seq(input_seq:str):
+        input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
+        return input_seq
+    processed_csv['aa_seq'] = processed_csv['aa_seq'].apply(clean_seq)
+    processed_csv = processed_csv.drop_duplicates(subset=['aa_seq'])
     return processed_csv
 
 def create_batched_sequence_datasets(
@@ -136,13 +140,13 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
         pdbs = model.output_to_pdb(output)
         tottime = timer() - start
         for header, seq, pdb_string, mean_plddt, ptm in zip(headers, sequences, pdbs, output["mean_plddt"], output["ptm"]):
-            output_file = out_dir / f"{header}.pdb"
+            output_file = Path(out_dir) / f"{header}.pdb"
             output_file.write_text(pdb_string)
             num_completed += 1
             logger.info(f"Predicted structure for {header} (L={len(seq)}, pLDDT={mean_plddt:.1f}, pTM={ptm:.3f}) in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
     logger.info("ESMFold predictions finished.")
-    del model
     # clean up
+    del model
     gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
@@ -168,7 +172,6 @@ def main():
         max_tokens_per_batch=args.max_tokens_per_batch,
         chunk_size=args.chunk_size
     )
-        
     logger.info("Pipeline completed successfully!")
 
 if __name__ == '__main__':
