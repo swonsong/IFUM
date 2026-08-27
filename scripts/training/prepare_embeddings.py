@@ -6,6 +6,7 @@ import esm.inverse_folding
 from glob import glob
 from tqdm import tqdm
 from transformers import T5EncoderModel, T5Tokenizer
+import pandas as pd
 
 def get_args():
     parser = argparse.ArgumentParser(description='Generate embeddings from PDB directory')
@@ -32,6 +33,8 @@ def main():
     # --- Process PDBs ---
     pdb_files = glob(os.path.join(args.pdb_dir, "*.pdb"))
     print(f"Found {len(pdb_files)} PDB files.")
+
+    dG_df = pd.read_csv(os.path.join(args.pdb_dir, "dG.csv"))
 
     with torch.no_grad():
         for pdb_path in tqdm(pdb_files):
@@ -60,7 +63,7 @@ def main():
                     'prott5': prott5,
                     'esm_if1': esm_if1,
                     'CA': torch.tensor(coords[:, 2]), # CA atoms
-                    'dG': torch.tensor([0.0]) # Placeholder, replace if you have labels
+                    'dG': torch.tensor([dG_df.loc[name, 'deltaG']]) # dG value from dG_csv: product of csv_dataloader.py
                 }
                 
                 torch.save(pt_data, os.path.join(args.out_dir, f"{name}.pt"))

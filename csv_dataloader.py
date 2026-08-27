@@ -162,6 +162,11 @@ def main():
     logger.info("--- Processing CSV files ---")
     input_csv = process_csv_files(args.csv_dir)
     
+    dG_csv = input_csv.drop(columns=['aa_seq']).set_index('name')
+    dG_csv_path = os.path.join(args.pdb_dir, "dG.csv")
+    dG_csv.to_csv(dG_csv_path)
+    logger.info(f"dG data saved to {dG_csv_path}")
+
     # run ESMFold
     logger.info("--- Running ESMFold prediction ---")
     run_esmfold(
