@@ -1,24 +1,17 @@
-'''pseudocode for dataloader to apply megascale & MGnify stability dataset to IFUM'''
-
 '''
----datasets---
-megascale:
-    (processed) K50 dG dataset.csv:
-        format: name, aa_seq, deltaG, mut_type, +a
-    alphafold .PDB(WT):
-        format: ATOM      1  N   VAL A   1       3.830   6.584  12.265  1.00 67.14           N  
-        # if 3d atom coordinates between WT and mut doesnt that differ, use pdb data to every megascale proteins?
-        # then apply esmfold to MGnify dataset only
-
-MGnify stability.csv(seq):
-    format: name, aa_seq, deltaG, +a
-'''
-'''
----models---
-esmif: fixed backbone atom 3d coordinate -> (structure embedding?) -> aa sequence
-prott5: aa sequence -> LM embedding(seq embedding)
-
-esmfold: aa seq->language model feature(embedding)->backbone 3d atomic coordinate
+# pseudocode
+parse csv directory(input) & pdb directory(output)
+for csv files in csv directory:
+    get [name, aa_seq, deltaG]columns
+    if [aa_seq]column not exist: convert [dna_seq]column to [aa_seq]column
+    concat
+replace sequences(U,Z,O) to X in concatenated dataframe
+remove duplicated sequences by [aa_seq]
+change format(dataframe to List[Tuple[str, str]])
+apply "create_batched_sequence_datasets()"
+run esmfold rowwise for concatenated dataframe
+write [name].pdb file, 3d atom coordinate
+write dG.csv file, [name, deltaG]columns in pdb directory
 '''
 
 import pandas as pd
@@ -47,20 +40,6 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 warnings.filterwarnings('ignore')
 
-'''
-# pseudocode
-parse csv directory(input) & pdb directory(output)
-for csv files in csv directory:
-    get [name, aa_seq, deltaG]columns
-    concat
-replace sequences(U,Z,O) to X in concatenated dataframe
-remove duplicated sequences
-change format(dataframe to List[Tuple[str, str]])
-apply "create_batched_sequence_datasets()"
-run esmfold rowwise for concatenated dataframe
-write [name].pdb file, 3d atom coordinate
-'''
-
 def get_args():
     parser = argparse.ArgumentParser(description='Generate PDB files from CSV directory')
     parser.add_argument('--csv_dir', type=str, required=True, help='Directory containing .csv files') # megascale & mgnify csv files
@@ -69,6 +48,36 @@ def get_args():
     parser.add_argument('--chunk_size', type=int, default=None, help='Chunk size for ESMFold optimization')
     parser.add_argument('--max_tokens_per_batch', type=int, default=1024, help='Max tokens per batch')
     return parser.parse_args()
+
+def dna_to_protein(dna_sequence):
+    codon_table = {
+    'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M',
+    'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T',
+    'AAC':'N', 'AAT':'N', 'AAA':'K', 'AAG':'K',
+    'AGC':'S', 'AGT':'S', 'AGA':'R', 'AGG':'R',                
+    'CTA':'L', 'CTC':'L', 'CTG':'L', 'CTT':'L',
+    'CCA':'P', 'CCC':'P', 'CCG':'P', 'CCT':'P',
+    'CAC':'H', 'CAT':'H', 'CAA':'Q', 'CAG':'Q',
+    'CGA':'R', 'CGC':'R', 'CGG':'R', 'CGT':'R',
+    'GTA':'V', 'GTC':'V', 'GTG':'V', 'GTT':'V',
+    'GCA':'A', 'GCC':'A', 'GCG':'A', 'GCT':'A',
+    'GAC':'D', 'GAT':'D', 'GAA':'E', 'GAG':'E',
+    'GGA':'G', 'GGC':'G', 'GGG':'G', 'GGT':'G',
+    'TCA':'S', 'TCC':'S', 'TCG':'S', 'TCT':'S',
+    'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
+    'TAC':'Y', 'TAT':'Y', 'TAA':'*', 'TAG':'*',
+    'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
+    } # *: Stop Codons
+    
+    dna_sequence = dna_sequence.upper()
+    protein_sequence = []
+
+    for i in range(0, len(dna_sequence) - 2, 3):
+        codon = dna_sequence[i:i+3]
+        amino_acid = codon_table.get(codon, "X") # "X" for unknown/incomplete codons
+        protein_sequence.append(amino_acid)
+            
+    return "".join(protein_sequence)
 
 def process_csv_files(csv_dir):
     csv_files = glob(os.path.join(csv_dir, "*.csv"))
@@ -81,13 +90,17 @@ def process_csv_files(csv_dir):
             logger.error(f"Failed to read CSV {csv_file}: {e}")
             continue
         logger.info(f"Processing CSV file: {csv_file}")
-
-        if 'name' not in file.columns or 'aa_seq' not in file.columns:
-            logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'. Found: {list(file.columns)}")
+        if 'name' not in file.columns or ('aa_seq' not in file.columns and 'dna_seq' not in file.columns):
+            logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'/'dna_seq'. Found: {list(file.columns)}")
             continue
 
-        cols = [c for c in ["name", "aa_seq", "deltaG"] if c in file.columns]
-        processed_csv = pd.concat([processed_csv, file[cols]], ignore_index=True)
+        file['name'] = file['name'].str.replace('.', '_', regex=False)
+        if 'aa_seq' not in file.columns:
+            file['aa_seq'] = file['dna_seq'].apply(dna_to_protein)
+        if 'deltaG' not in file.columns:
+            file['deltaG'] = 0.0
+
+        processed_csv = pd.concat([processed_csv, file[['name', 'aa_seq', 'deltaG']]], ignore_index=True)
 
     def clean_seq(input_seq:str):
         input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
@@ -130,7 +143,7 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     for headers, sequences in batched_sequences:
         start = timer()
         try:
-            output = model.infer(sequences, num_recycles=num_recycles)
+            output = model.infer(sequences)
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
                 logger.warning(f"CUDA OOM on a batch of size {len(sequences)}. Try lowering --max-tokens-per-batch.")
