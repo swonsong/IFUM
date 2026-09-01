@@ -16,8 +16,24 @@ write dG.csv file, [name, deltaG]columns in pdb directory
 
 import pandas as pd
 import torch
+# ---ESMFold2 ESMC---
+# from esm.models.esmc import EsmcForMaskedLM, EsmcTokenizer
+
+# ---ESMFold2 folding---
+# from esm.models.esmfold2 import (
+#     # DNAInput,
+#     ESMFold2InputBuilder,
+#     EsmFold2Model,
+#     # LigandInput,
+#     Modification,
+#     ProteinInput,
+#     StructurePredictionInput,
+# )
+
+# ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
+from transformers import EsmFold2Model
+
 from glob import glob
-import esm
 from tqdm import tqdm
 import argparse
 from pathlib import Path
@@ -131,8 +147,13 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
     logger.info("Loading ESMFold model...")
-    model = esm.pretrained.esmfold_v1().to(device)
-    model.eval()
+    # ---ESMFold2 ESMC---
+    # model = EsmcForMaskedLM.from_pretrained("biohub/ESMC-68", device="cuda").eval()
+    # tokenizer = EsmcTokenizer()
+    
+    
+    model = EsmFold2Model.from_pretrained("biohub/ESMFold2", device="cuda").eval()
+
     if chunk_size is not None:
         model.set_chunk_size(chunk_size)
         
@@ -143,20 +164,56 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     for headers, sequences in batched_sequences:
         start = timer()
         try:
-            output = model.infer(sequences)
+            # ---ESMFold2 ESMC---
+            # inputs = tokenizer(sequences, return_tensors="pt", padding=True)
+            # inputs = {k: v.to(model.device) for k, v in inputs.items()}
+            # with torch.inference_mode():
+            #     output = model(**inputs)
+
+            # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
+            model = EsmFold2Model.from_pretrained("biohub/ESMFold2").cuda().eval()
+
+            # ---ESMFold1(original IFUM)---
+            # output = model.infer(sequences)
+
+            # ---ESMFold2 folding---
+            # spi = StructurePredictionInput(
+            #     sequences=[
+            #         ProteinInput(id="A", sequence=sequences)
+            #     ]
+            # )
+
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
                 logger.warning(f"CUDA OOM on a batch of size {len(sequences)}. Try lowering --max-tokens-per-batch.")
                 continue
             raise
-        output = {key: value.cpu() for key, value in output.items()}
-        pdbs = model.output_to_pdb(output)
+
+        # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
+        pdbs = model.infer_protein_as_pdb(sequences)
+        
+        # ---ESMFold1(original IFUM)---
+        # output = {key: value.cpu() for key, value in output.items()}
+        # pdbs = model.output_to_pdb(output)
+
+        # ---ESMFold2 folding---        
+        # result = ESMFold2InputBuilder().fold(
+        #     model, spi, num_loops=20, num_sampling_steps=100, num_diffusion_samples=1, seed=0
+        # )
+
         tottime = timer() - start
-        for header, seq, pdb_string, mean_plddt, ptm in zip(headers, sequences, pdbs, output["mean_plddt"], output["ptm"]):
+        
+        # ---ESMFold2 ESMC---
+        # print(f"pLDDT mean: {float(result.plddt.mean()):.3f}, pTM: {float(result.ptm):.3f}, ipTM: {float(result.iptm):.3f}")
+        
+        for header, seq, pdb_string, mean_plddt, ptm in zip(headers, sequences, pdbs, 
+                                                            # output["mean_plddt"], output["ptm"]
+                                                            ):
             output_file = Path(out_dir) / f"{header}.pdb"
             output_file.write_text(pdb_string)
             num_completed += 1
-            logger.info(f"Predicted structure for {header} (L={len(seq)}, pLDDT={mean_plddt:.1f}, pTM={ptm:.3f}) in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
+            # logger.info(f"Predicted structure for {header} (L={len(seq)}, pLDDT={mean_plddt:.1f}, pTM={ptm:.3f}) in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
+            logger.info(f"Predicted structure for {header} (L={len(seq)}) in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
     logger.info("ESMFold predictions finished.")
     # clean up
     del model
