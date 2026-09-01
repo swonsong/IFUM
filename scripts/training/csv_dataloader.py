@@ -98,7 +98,7 @@ def process_csv_files(csv_dir):
         if 'aa_seq' not in file.columns:
             file['aa_seq'] = file['dna_seq'].apply(dna_to_protein)
         if 'deltaG' not in file.columns:
-            file['deltaG'] = 0.0
+            file['deltaG'] = None
 
         processed_csv = pd.concat([processed_csv, file[['name', 'aa_seq', 'deltaG']]], ignore_index=True)
 
