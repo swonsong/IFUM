@@ -16,6 +16,7 @@ write dG.csv file, [name, deltaG]columns in pdb directory
 
 import pandas as pd
 import torch
+import transformers
 # ---ESMFold2 ESMC---
 # from esm.models.esmc import EsmcForMaskedLM, EsmcTokenizer
 
@@ -32,11 +33,6 @@ import torch
 
 # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
 from esm.models.esmfold2 import EsmFold2Model
-"""---09.01 error log---
-File "/home/seongwon/anaconda3/envs/IFUM/./IFUM/scripts/training/csv_dataloader.py", line 34, in <module>
-    from transformers import EsmFold2Model
-ImportError: cannot import name 'EsmFold2Model' from 'transformers' (/home/seongwon/anaconda3/envs/IFUM/lib/python3.14/site-packages/transformers/__init__.py)
-"""
 
 from glob import glob
 from tqdm import tqdm
