@@ -16,7 +16,7 @@ write dG.csv file, [name, deltaG]columns in pdb directory
 
 import pandas as pd
 import torch
-import torch.nn as nn
+from torch import nn
 import transformers
 # ---ESMFold2 ESMC---
 # from esm.models.esmc import EsmcForMaskedLM, EsmcTokenizer
