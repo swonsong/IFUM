@@ -14,6 +14,8 @@ write [name].pdb file, 3d atom coordinate
 write dG.csv file, [name, deltaG]columns in pdb directory
 '''
 
+!pip install torch
+
 import pandas as pd
 import torch
 from torch import nn
