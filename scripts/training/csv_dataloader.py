@@ -21,19 +21,15 @@ import esm
 # ---ESMFold2 ESMC---
 # from esm.models.esmc import EsmcForMaskedLM, EsmcTokenizer
 
-# ---ESMFold2 folding---
-# from esm.models.esmfold2 import (
-#     # DNAInput,
-#     ESMFold2InputBuilder,
-#     EsmFold2Model,
-#     # LigandInput,
-#     Modification,
-#     ProteinInput,
-#     StructurePredictionInput,
-# )
-
-# ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
-from esm.models.esmfold2 import EsmFold2Model
+from esm.models.esmfold2 import (
+    DNAInput,
+    ESMFold2InputBuilder,
+    EsmFold2Model,
+    LigandInput,
+    Modification,
+    ProteinInput,
+    StructurePredictionInput,
+)
 
 from glob import glob
 from tqdm import tqdm
