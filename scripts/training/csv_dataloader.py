@@ -149,7 +149,6 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     # model = EsmcForMaskedLM.from_pretrained("biohub/ESMC-68", device="cuda").eval()
     # tokenizer = EsmcTokenizer()
     
-    
     model = EsmFold2Model.from_pretrained("biohub/ESMFold2", device="cuda").eval()
 
     if chunk_size is not None:
@@ -159,45 +158,46 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     batched_sequences = create_batched_sequence_datasets(all_sequences, max_tokens_per_batch)
     num_completed, num_sequences = 0, len(all_sequences)
     
+    # ---ESMFold2 ESMC---
+    # inputs = tokenizer(sequences, return_tensors="pt", padding=True)
+    # inputs = {k: v.to(model.device) for k, v in inputs.items()}
+    # with torch.inference_mode():
+    #     output = model(**inputs)
+    
+    # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
+    model = EsmFold2Model.from_pretrained("biohub/ESMFold2").cuda().eval()
+    
+    # ---ESMFold1(original IFUM)---
+    # output = model.infer(sequences)
+    
+    # ---ESMFold2 folding---
+    # spi = StructurePredictionInput(
+    #     sequences=[
+    #         ProteinInput(id="A", sequence=sequences)
+    #     ]
+    # )
+    
     for headers, sequences in batched_sequences:
         start = timer()
         try:
-            # ---ESMFold2 ESMC---
-            # inputs = tokenizer(sequences, return_tensors="pt", padding=True)
-            # inputs = {k: v.to(model.device) for k, v in inputs.items()}
-            # with torch.inference_mode():
-            #     output = model(**inputs)
-
             # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
-            model = EsmFold2Model.from_pretrained("biohub/ESMFold2").cuda().eval()
-
+            pdbs = model.infer_protein_as_pdb(sequences)
+                    
             # ---ESMFold1(original IFUM)---
-            # output = model.infer(sequences)
-
-            # ---ESMFold2 folding---
-            # spi = StructurePredictionInput(
-            #     sequences=[
-            #         ProteinInput(id="A", sequence=sequences)
-            #     ]
+            # output = {key: value.cpu() for key, value in output.items()}
+            # pdbs = model.output_to_pdb(output)
+            
+            # ---ESMFold2 folding---        
+            # result = ESMFold2InputBuilder().fold(
+            #     model, spi, num_loops=20, num_sampling_steps=100, num_diffusion_samples=1, seed=0
             # )
+            
 
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
                 logger.warning(f"CUDA OOM on a batch of size {len(sequences)}. Try lowering --max-tokens-per-batch.")
                 continue
             raise
-
-        # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
-        pdbs = model.infer_protein_as_pdb(sequences)
-        
-        # ---ESMFold1(original IFUM)---
-        # output = {key: value.cpu() for key, value in output.items()}
-        # pdbs = model.output_to_pdb(output)
-
-        # ---ESMFold2 folding---        
-        # result = ESMFold2InputBuilder().fold(
-        #     model, spi, num_loops=20, num_sampling_steps=100, num_diffusion_samples=1, seed=0
-        # )
 
         tottime = timer() - start
         
