@@ -36,18 +36,15 @@ class SimpleBatchDataset(Dataset):
         seq_indices = self._get_indices(pt['seq'])
         
         ptname = pt['name']
-        if ptname in self.dG_map:
-            dG_val = self.dG_map[ptname]
-        else:
-            dG_val = 0.0
-            print(f"dG label for {ptname} not exists: set 0.0")
+        dG_val = self.dG_map.get(ptname, 0.0)
+        dG_tensor = torch.tensor([dG_val], dtype=torch.float32)
 
         return (
             pt['name'], 
             pt['prott5'],    # [L, 1024]
             pt['esm_if1'],   # [L, 512]
             pt['CA'],        # [L, 3]
-            dG_val,          # [1]
+            dG_tensor,          # [1]
             seq_indices      # [L]
         )
 def collate_fn(batch):
