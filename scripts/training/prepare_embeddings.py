@@ -6,11 +6,10 @@ import esm.inverse_folding
 from glob import glob
 from tqdm import tqdm
 from transformers import T5EncoderModel, T5Tokenizer
-import pandas as pd
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Generate embeddings from PDB directory')
-    parser.add_argument('--pdb_dir', type=str, required=True, help='Directory containing .pdb files')
+    parser = argparse.ArgumentParser(description='Generate embeddings from cif directory')
+    parser.add_argument('--cif_dir', type=str, required=True, help='Directory containing .cif files')
     parser.add_argument('--out_dir', type=str, required=True, help='Output directory for .pt files')
     return parser.parse_args()
 
@@ -30,18 +29,16 @@ def main():
     t5_model = T5EncoderModel.from_pretrained(t5_link).to(device).eval()
     t5_vocab = T5Tokenizer.from_pretrained(t5_link, do_lower_case=False)
 
-    # --- Process PDBs ---
-    pdb_files = glob(os.path.join(args.pdb_dir, "*.pdb"))
-    print(f"Found {len(pdb_files)} PDB files.")
-
-    dG_df = pd.read_csv(os.path.join(args.pdb_dir, "dG.csv"))
+    # --- Process cifs ---
+    cif_files = glob(os.path.join(args.cif_dir, "*.cif"))
+    print(f"Found {len(cif_files)} cif files.")
 
     with torch.no_grad():
-        for pdb_path in tqdm(pdb_files):
-            name = os.path.splitext(os.path.basename(pdb_path))[0]
+        for cif_path in tqdm(cif_files):
+            name = os.path.splitext(os.path.basename(cif_path))[0]
             try:
                 # 1. Extract Sequence & Coordinates (ESM-IF1)
-                structure = esm.inverse_folding.util.load_structure(pdb_path, "A")
+                structure = esm.inverse_folding.util.load_structure(cif_path, "A")
                 coords, seq = esm.inverse_folding.util.extract_coords_from_structure(structure)
 
                 # 2. ESM-IF1 Embedding
@@ -63,7 +60,7 @@ def main():
                     'prott5': prott5,
                     'esm_if1': esm_if1,
                     'CA': torch.tensor(coords[:, 2]), # CA atoms
-                    'dG': torch.tensor([dG_df.loc[name, 'deltaG']]) # dG value from dG_csv: product of csv_dataloader.py
+                    'dG': torch.tensor([0.0]) # Placeholder, replace if you have labels
                 }
                 
                 torch.save(pt_data, os.path.join(args.out_dir, f"{name}.pt"))

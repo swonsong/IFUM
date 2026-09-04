@@ -7,6 +7,7 @@ from glob import glob
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
 from tqdm import tqdm
+import pandas as pd
 
 from IEFFEUM import model
 
@@ -14,8 +15,15 @@ class SimpleBatchDataset(Dataset):
     def __init__(self, data_dir):
         self.files = glob(os.path.join(data_dir, "*.pt"))
         print(f"Loaded {len(self.files)} training files.")
-        self.aa_to_idx = {aa: i for i, aa in enumerate('ACDEFGHIKLMNPQRSTVWY')}
+        self.aa_to_idx = {aa: i for i, aa in enumerate('ACDEFGHIKLMNPQRSTVWYX')} # added 'X'?
+        
+        csv_path = os.path.join(data_dir, "dG.csv")
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"dG.csv file not found, run csv_dataloader.py first")
 
+        df = pd.read_csv(csv_path)
+        self.dG_map = dict(zip(df['name'], df['dG']))
+        
     def __len__(self):
         return len(self.files)
 
@@ -25,14 +33,21 @@ class SimpleBatchDataset(Dataset):
 
     def __getitem__(self, idx):
         pt = torch.load(self.files[idx])
-        seq_indices = self._get_indices(pt['seq']) 
+        seq_indices = self._get_indices(pt['seq'])
         
+        ptname = pt['name']
+        if ptname in self.dG_map:
+            dG_val = self.dG_map[ptname]
+        else:
+            dG_val = 0.0
+            print(f"dG label for {ptname} not exists: set 0.0")
+
         return (
             pt['name'], 
             pt['prott5'],    # [L, 1024]
             pt['esm_if1'],   # [L, 512]
             pt['CA'],        # [L, 3]
-            pt['dG'],        # [1]
+            dG_val,          # [1]
             seq_indices      # [L]
         )
 def collate_fn(batch):
