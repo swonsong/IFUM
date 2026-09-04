@@ -1,4 +1,5 @@
 import os
+import shutil
 import torch
 import argparse
 import esm
@@ -18,6 +19,13 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
+    
+    # --- Save dG.csv for train.py ---
+    dG_csv_path = os.path.join(args.cif_dir, "dG.csv")
+    out_dG_csv_path = os.path.join(args.out_dir, "dG.csv")
+    shutil.copy2(dG_csv_path, out_dG_csv_path)
+    print(f"dG data saved to {out_dG_csv_path}")
+    
 
     # --- Load Models ---
     print("Loading ESM-IF1...")
