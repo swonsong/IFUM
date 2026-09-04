@@ -151,7 +151,7 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     num_completed, num_sequences = 0, len(all_sequences)
     
     for headers, sequences in batched_sequences:
-        for (header, seq) in enumerate(zip(headers, sequences)):
+        for idx, (header, seq) in enumerate(zip(headers, sequences)):
             start = timer()
             try:
                 spi = StructurePredictionInput(sequences=[ProteinInput(id="A", sequence=seq)])
