@@ -1,6 +1,6 @@
 '''
 # pseudocode
-parse csv directory(input) & pdb directory(output)
+parse csv directory(input) & cif directory(output)
 for csv files in csv directory:
     get [name, aa_seq, deltaG]columns
     if [aa_seq]column not exist: convert [dna_seq]column to [aa_seq]column
@@ -10,17 +10,14 @@ remove duplicated sequences by [aa_seq]
 change format(dataframe to List[Tuple[str, str]])
 apply "create_batched_sequence_datasets()"
 run esmfold rowwise for concatenated dataframe
-write [name].pdb file, 3d atom coordinate
-write dG.csv file, [name, deltaG]columns in pdb directory
+write [name].cif file, 3d atom coordinate
+write dG.csv file, [name, deltaG]columns in cif directory
 '''
 
 import pandas as pd
 import torch
 from torch import nn
 import esm
-# ---ESMFold2 ESMC---
-# from esm.models.esmc import EsmcForMaskedLM, EsmcTokenizer
-
 from esm.models.esmfold2 import (
     DNAInput,
     ESMFold2InputBuilder,
@@ -30,7 +27,6 @@ from esm.models.esmfold2 import (
     ProteinInput,
     StructurePredictionInput,
 )
-
 from glob import glob
 from tqdm import tqdm
 import argparse
@@ -55,9 +51,9 @@ logger.addHandler(console_handler)
 warnings.filterwarnings('ignore')
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Generate PDB files from CSV directory')
+    parser = argparse.ArgumentParser(description='Generate .cif files from CSV directory')
     parser.add_argument('--csv_dir', type=str, required=True, help='Directory containing .csv files') # megascale & mgnify csv files
-    parser.add_argument('--pdb_dir', type=str, required=True, help='Output directory for .pdb files') # fixed atom 3D coordinate
+    parser.add_argument('--cif_dir', type=str, required=True, help='Output directory for .cif files') # fixed atom 3D coordinate
     parser.add_argument('--num_recycles', type=int, default=None, help='Number of recycles for ESMFold')
     parser.add_argument('--chunk_size', type=int, default=None, help='Chunk size for ESMFold optimization')
     parser.add_argument('--max_tokens_per_batch', type=int, default=1024, help='Max tokens per batch')
@@ -88,7 +84,7 @@ def dna_to_protein(dna_sequence):
 
     for i in range(0, len(dna_sequence) - 2, 3):
         codon = dna_sequence[i:i+3]
-        amino_acid = codon_table.get(codon, "X") # "X" for unknown/incomplete codons
+        amino_acid = codon_table.get(codon, "X")
         protein_sequence.append(amino_acid)
             
     return "".join(protein_sequence)
@@ -145,11 +141,7 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
     logger.info("Loading ESMFold model...")
-    # ---ESMFold2 ESMC---
-    # model = EsmcForMaskedLM.from_pretrained("biohub/ESMC-68", device="cuda").eval()
-    # tokenizer = EsmcTokenizer()
-    
-    model = EsmFold2Model.from_pretrained("biohub/ESMFold2", device="cuda").eval()
+    model = EsmFold2Model.from_pretrained("biohub/ESMFold2", device=str(device)).eval()
 
     if chunk_size is not None:
         model.set_chunk_size(chunk_size)
@@ -158,62 +150,35 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     batched_sequences = create_batched_sequence_datasets(all_sequences, max_tokens_per_batch)
     num_completed, num_sequences = 0, len(all_sequences)
     
-    # ---ESMFold2 ESMC---
-    # inputs = tokenizer(sequences, return_tensors="pt", padding=True)
-    # inputs = {k: v.to(model.device) for k, v in inputs.items()}
-    # with torch.inference_mode():
-    #     output = model(**inputs)
-    
-    # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
-    model = EsmFold2Model.from_pretrained("biohub/ESMFold2").cuda().eval()
-    
-    # ---ESMFold1(original IFUM)---
-    # output = model.infer(sequences)
-    
-    # ---ESMFold2 folding---
-    # spi = StructurePredictionInput(
-    #     sequences=[
-    #         ProteinInput(id="A", sequence=sequences)
-    #     ]
-    # )
-    
     for headers, sequences in batched_sequences:
-        start = timer()
-        try:
-            # ---ESMFold2 single folding(esm/models/esmfold2/model.py)---
-            pdbs = model.infer_protein_as_pdb(sequences)
-                    
-            # ---ESMFold1(original IFUM)---
-            # output = {key: value.cpu() for key, value in output.items()}
-            # pdbs = model.output_to_pdb(output)
-            
-            # ---ESMFold2 folding---        
-            # result = ESMFold2InputBuilder().fold(
-            #     model, spi, num_loops=20, num_sampling_steps=100, num_diffusion_samples=1, seed=0
-            # )
-            
+        for (header, seq) in enumerate(zip(headers, sequences)):
+            start = timer()
+            try:
+                spi = StructurePredictionInput(sequences=[ProteinInput(id="A", sequence=seq)])
+                loops = num_recycles if num_recycles is not None else 20    
+                
+                result = ESMFold2InputBuilder().fold(
+                    model, spi, num_loops=loops, num_sampling_steps=100, num_diffusion_samples=1, seed=0
+                    )
+                
+                tottime = timer() - start
+                output_file = Path(out_dir) / f"{header}.cif"
+                with open(output_file, "w") as f:
+                    f.write(result.complex.to_mmcif())
+                
+                num_completed += 1
+                logger.info(f"Predicted structure for {header} in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
 
-        except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
-                logger.warning(f"CUDA OOM on a batch of size {len(sequences)}. Try lowering --max-tokens-per-batch.")
-                continue
-            raise
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    logger.warning(f"CUDA OOM on sequence '{header}' (Length: {len(seq)}). Skipping this sequence.")
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    gc.collect()
+                    continue
+                raise
 
-        tottime = timer() - start
-        
-        # ---ESMFold2 ESMC---
-        # print(f"pLDDT mean: {float(result.plddt.mean()):.3f}, pTM: {float(result.ptm):.3f}, ipTM: {float(result.iptm):.3f}")
-        
-        for header, seq, pdb_string, mean_plddt, ptm in zip(headers, sequences, pdbs, 
-                                                            # output["mean_plddt"], output["ptm"]
-                                                            ):
-            output_file = Path(out_dir) / f"{header}.pdb"
-            output_file.write_text(pdb_string)
-            num_completed += 1
-            # logger.info(f"Predicted structure for {header} (L={len(seq)}, pLDDT={mean_plddt:.1f}, pTM={ptm:.3f}) in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
-            logger.info(f"Predicted structure for {header} (L={len(seq)}) in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
     logger.info("ESMFold predictions finished.")
-    # clean up
     del model
     gc.collect()
     if device.type == "cuda":
@@ -222,7 +187,7 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
 def main():
     args = get_args()
     os.makedirs(args.csv_dir, exist_ok=True)
-    os.makedirs(args.pdb_dir, exist_ok=True)
+    os.makedirs(args.cif_dir, exist_ok=True)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info(f"Using device: {device}")
@@ -231,7 +196,7 @@ def main():
     input_csv = process_csv_files(args.csv_dir)
     
     dG_csv = input_csv.drop(columns=['aa_seq']).set_index('name')
-    dG_csv_path = os.path.join(args.pdb_dir, "dG.csv")
+    dG_csv_path = os.path.join(args.cif_dir, "dG.csv")
     dG_csv.to_csv(dG_csv_path)
     logger.info(f"dG data saved to {dG_csv_path}")
 
@@ -239,7 +204,7 @@ def main():
     logger.info("--- Running ESMFold prediction ---")
     run_esmfold(
         input_csv=input_csv,
-        out_dir=args.pdb_dir,
+        out_dir=args.cif_dir,
         device=device,
         num_recycles=args.num_recycles,
         max_tokens_per_batch=args.max_tokens_per_batch,
@@ -251,5 +216,5 @@ if __name__ == '__main__':
     main()
 
 '''
-python csv_dataloader.py --csv_dir [path to csv files] --pdb_dir [path to pdb files: output directory]
+python csv_dataloader.py --csv_dir [path to csv files] --cif_dir [path to cif files: output directory]
 '''
