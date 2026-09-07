@@ -22,7 +22,7 @@ class SimpleBatchDataset(Dataset):
             raise FileNotFoundError(f"dG.csv file not found, run csv_dataloader.py first")
 
         df = pd.read_csv(csv_path)
-        self.dG_map = dict(zip(df['name'], df['dG']))
+        self.dG_map = dict(zip(df['name'], df['deltaG']))
         
     def __len__(self):
         return len(self.files)
