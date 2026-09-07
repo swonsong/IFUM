@@ -25,7 +25,6 @@ def main():
     out_dG_csv_path = os.path.join(args.out_dir, "dG.csv")
     shutil.copy2(dG_csv_path, out_dG_csv_path)
     print(f"dG data saved to {out_dG_csv_path}")
-    
 
     # --- Load Models ---
     print("Loading ESM-IF1...")

@@ -91,7 +91,7 @@ def dna_to_protein(dna_sequence):
 
 def process_csv_files(csv_dir):
     csv_files = glob(os.path.join(csv_dir, "*.csv"))
-    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG'])
+    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG']) # set
     
     for csv_file in csv_files:
         try:
