@@ -140,7 +140,7 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     """Runs ESMFold2 prediction on a processed csv file for not in .pdb list"""
     logger.info(f"Reading sequences from {input_csv}")
     
-    pdb_files = glob(os.path.join(out_dir, "*.pdb"))
+    pdb_files = glob(os.path.join(out_dir, "*.pdb")) + glob(os.path.join(out_dir, "*.cif"))
     pdb_baseid = {os.path.basename(f).split('.pdb')[0] for f in pdb_files}
     # pdb_baseid = {os.path.basename(f).replace('.', '_') for f in pdb_files}
     csv_baseid = input_csv['name'].apply(lambda x: x.split('.pdb')[0])
