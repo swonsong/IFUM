@@ -104,7 +104,9 @@ def process_csv_files(csv_dir):
             logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'/'dna_seq'. Found: {list(file.columns)}")
             continue
 
-        # file['name'] = file['name'].str.replace('.', '_', regex=False)
+        file['name'] = file['name'].str.replace('.', '_', regex=False)
+        file['name'] = file['name'].str.replace('|', ':', regex=False)
+        
         if 'aa_seq' not in file.columns:
             file['aa_seq'] = file['dna_seq'].apply(dna_to_protein)
         if 'deltaG' not in file.columns:
@@ -138,12 +140,9 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     """Runs ESMFold2 prediction on a processed csv file for not in .pdb list"""
     logger.info(f"Reading sequences from {input_csv}")
     
-    non_pdb_csv = input_csv
     pdb_files = glob(os.path.join(out_dir, "*.pdb"))
-    for pdb_file in pdb_files:
-        protein_name = os.path.basename(pdb_file)
-        non_pdb_csv = non_pdb_csv[~non_pdb_csv['name'].str.startswith(protein_name, na=False)]
-        
+    pdb_filenames = {os.path.basename(f) for f in pdb_files}
+    non_pdb_csv = input_csv[~input_csv['name'].isin(pdb_filenames)]
     all_sequences = list(zip(non_pdb_csv['name'], non_pdb_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
