@@ -104,7 +104,7 @@ def process_csv_files(csv_dir):
             logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'/'dna_seq'. Found: {list(file.columns)}")
             continue
 
-        file['name'] = file['name'].str.replace('.', '_', regex=False)
+        # file['name'] = file['name'].str.replace('.', '_', regex=False)
         file['name'] = file['name'].str.replace('|', ':', regex=False)
         
         if 'aa_seq' not in file.columns:
@@ -141,8 +141,9 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     logger.info(f"Reading sequences from {input_csv}")
     
     pdb_files = glob(os.path.join(out_dir, "*.pdb"))
-    pdb_baseid = {os.path.basename(f).replace('.', '_') for f in pdb_files}
-    csv_baseid = input_csv['name'].apply(lambda x: x.rsplit('_', 1)[0])
+    pdb_baseid = {os.path.basename(f) for f in pdb_files}
+    # pdb_baseid = {os.path.basename(f).replace('.', '_') for f in pdb_files}
+    csv_baseid = input_csv['name'].apply(lambda x: x.rsplit('.pdb', 1)[0])
     non_pdb_csv = input_csv[~csv_baseid.isin(pdb_baseid)]
     all_sequences = list(zip(non_pdb_csv['name'], non_pdb_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
