@@ -141,9 +141,9 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     logger.info(f"Reading sequences from {input_csv}")
     
     pdb_files = glob(os.path.join(out_dir, "*.pdb"))
-    pdb_filenames = {os.path.basename(f) for f in pdb_files}
-    pdb_filenames = {f.replace('.', '_') for f in pdb_filenames}
-    non_pdb_csv = input_csv[~input_csv['name'].isin(pdb_filenames)]
+    pdb_baseid = {os.path.basename(f).replace('.', '_') for f in pdb_files}
+    csv_baseid = input_csv['name'].apply(lambda x: x.rsplit('_', 1)[0])
+    non_pdb_csv = input_csv[~csv_baseid.isin(pdb_baseid)]
     all_sequences = list(zip(non_pdb_csv['name'], non_pdb_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
