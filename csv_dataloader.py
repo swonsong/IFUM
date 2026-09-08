@@ -137,8 +137,13 @@ def create_batched_sequence_datasets(
 def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_batch=1024, chunk_size=None):
     """Runs ESMFold2 prediction on a processed csv file for not in .pdb list"""
     logger.info(f"Reading sequences from {input_csv}")
-    pdb_tuple = tuple([os.path.basename(f) for f in glob.glob('./*.pdb')])
-    non_pdb_csv = input_csv[~input_csv['name'].str.startswith(pdb_tuple)]
+    
+    non_pdb_csv = input_csv
+    pdb_files = glob(os.path.join(out_dir, "*.pdb"))
+    for pdb_file in pdb_files:
+        protein_name = os.path.basename(pdb_file)
+        non_pdb_csv = non_pdb_csv[~non_pdb_csv['name'].str.startswith(protein_name, na=False)]
+        
     all_sequences = list(zip(non_pdb_csv['name'], non_pdb_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
