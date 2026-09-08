@@ -1,6 +1,6 @@
 '''
 # pseudocode
-parse csv directory(input) & cif directory(output)
+parse csv directory(input) & cif/pdb directory(output)
 for csv files in csv directory:
     get [name, aa_seq, deltaG]columns
     if [aa_seq]column not exist: convert [dna_seq]column to [aa_seq]column
@@ -10,8 +10,8 @@ remove duplicated sequences by [aa_seq]
 change format(dataframe to List[Tuple[str, str]])
 apply "create_batched_sequence_datasets()"
 run esmfold rowwise for concatenated dataframe
-write [name].cif file, 3d atom coordinate
-write dG.csv file, [name, deltaG]columns in cif directory
+write [name].cif/.pdb file, 3d atom coordinate
+write dG.csv file, [name, deltaG]columns in cif/pdb directory
 '''
 
 import pandas as pd
@@ -51,9 +51,9 @@ logger.addHandler(console_handler)
 warnings.filterwarnings('ignore')
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Generate .cif files from CSV directory')
+    parser = argparse.ArgumentParser(description='Generate .cif/.pdb files from CSV directory')
     parser.add_argument('--csv_dir', type=str, required=True, help='Directory containing .csv files') # megascale & mgnify csv files
-    parser.add_argument('--cif_dir', type=str, required=True, help='Output directory for .cif files') # fixed atom 3D coordinate
+    parser.add_argument('--pdb_dir', type=str, required=True, help='Output directory for .cif/.pdb files') # fixed atom 3D coordinate
     parser.add_argument('--num_recycles', type=int, default=None, help='Number of recycles for ESMFold')
     parser.add_argument('--chunk_size', type=int, default=None, help='Chunk size for ESMFold optimization')
     parser.add_argument('--max_tokens_per_batch', type=int, default=1024, help='Max tokens per batch')
@@ -104,7 +104,7 @@ def process_csv_files(csv_dir):
             logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'/'dna_seq'. Found: {list(file.columns)}")
             continue
 
-        file['name'] = file['name'].str.replace('.', '_', regex=False)
+        # file['name'] = file['name'].str.replace('.', '_', regex=False)
         if 'aa_seq' not in file.columns:
             file['aa_seq'] = file['dna_seq'].apply(dna_to_protein)
         if 'deltaG' not in file.columns:
@@ -116,7 +116,7 @@ def process_csv_files(csv_dir):
         input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
         return input_seq
     processed_csv['aa_seq'] = processed_csv['aa_seq'].apply(clean_seq)
-    processed_csv = processed_csv.drop_duplicates(subset=['aa_seq'])
+    processed_csv = processed_csv.drop_duplicates(subset=['aa_seq'], keep='first')
     return processed_csv
 
 def create_batched_sequence_datasets(
@@ -135,9 +135,11 @@ def create_batched_sequence_datasets(
     yield batch_headers, batch_sequences
 
 def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_batch=1024, chunk_size=None):
-    """Runs ESMFold prediction on a processed csv file"""
+    """Runs ESMFold2 prediction on a processed csv file for not in .pdb list"""
     logger.info(f"Reading sequences from {input_csv}")
-    all_sequences = list(zip(input_csv['name'], input_csv['aa_seq']))
+    pdb_tuple = tuple([os.path.basename(f) for f in glob.glob('./*.pdb')])
+    non_pdb_csv = input_csv[~input_csv['name'].str.startswith(pdb_tuple)]
+    all_sequences = list(zip(non_pdb_csv['name'], non_pdb_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
     logger.info("Loading ESMFold model...")
@@ -187,24 +189,22 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
 def main():
     args = get_args()
     os.makedirs(args.csv_dir, exist_ok=True)
-    os.makedirs(args.cif_dir, exist_ok=True)
+    os.makedirs(args.pdb_dir, exist_ok=True)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info(f"Using device: {device}")
     
     logger.info("--- Processing CSV files ---")
     input_csv = process_csv_files(args.csv_dir)
-    
-    dG_csv = input_csv.drop(columns=['aa_seq']).set_index('name')
-    dG_csv_path = os.path.join(args.cif_dir, "dG.csv")
-    dG_csv.to_csv(dG_csv_path)
-    logger.info(f"dG data saved to {dG_csv_path}")
+    process_csv_path = os.path.join(args.pdb_dir, "processed.csv")
+    input_csv.to_csv(process_csv_path)
+    logger.info(f"processed csv data saved to {process_csv_path}")
 
     # run ESMFold
     logger.info("--- Running ESMFold prediction ---")
     run_esmfold(
         input_csv=input_csv,
-        out_dir=args.cif_dir,
+        out_dir=args.pdb_dir,
         device=device,
         num_recycles=args.num_recycles,
         max_tokens_per_batch=args.max_tokens_per_batch,
@@ -216,5 +216,5 @@ if __name__ == '__main__':
     main()
 
 '''
-python csv_dataloader.py --csv_dir [path to csv files] --cif_dir [path to cif files: output directory]
+python csv_dataloader.py --csv_dir [path to csv files] --pdb_dir [path to cif/pdb files: output directory] --max_tokens_per_batch [] --chunk_size [] --
 '''

@@ -44,7 +44,7 @@ class SimpleBatchDataset(Dataset):
             pt['prott5'],    # [L, 1024]
             pt['esm_if1'],   # [L, 512]
             pt['CA'],        # [L, 3]
-            dG_tensor,          # [1]
+            dG_tensor,       # [1]
             seq_indices      # [L]
         )
 def collate_fn(batch):
