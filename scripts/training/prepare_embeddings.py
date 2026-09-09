@@ -56,7 +56,8 @@ def main():
                 rep = esm.inverse_folding.util.get_encoder_output(esm_model, alphabet, coords)
                 esm_if1 = rep.detach().cpu() # [L, 512]
 
-                file_base_name = os.path.splitext(os.path.basename(pdb_path))[0]
+                # file_base_name = os.path.splitext(os.path.basename(pdb_path))[0]
+                file_base_name = os.path.basename(pdb_path)
                 matched_rows = processed_csv_df[processed_csv_df['name'].str.startswith(file_base_name)]
                 for row in matched_rows:
                     ptname = row['name']

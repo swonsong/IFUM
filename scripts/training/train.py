@@ -20,7 +20,6 @@ class SimpleBatchDataset(Dataset):
         csv_path = os.path.join(data_dir, "dG.csv")
         if not os.path.exists(csv_path):
             raise FileNotFoundError(f"dG.csv file not found, run csv_dataloader.py first")
-
         df = pd.read_csv(csv_path)
         self.dG_map = dict(zip(df['name'], df['deltaG']))
         
