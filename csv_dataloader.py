@@ -86,12 +86,12 @@ def dna_to_protein(dna_sequence):
         codon = dna_sequence[i:i+3]
         amino_acid = codon_table.get(codon, "X")
         protein_sequence.append(amino_acid)
-            
+
     return "".join(protein_sequence)
 
 def process_csv_files(csv_dir):
     csv_files = glob(os.path.join(csv_dir, "*.csv"))
-    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG']) # set
+    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG'])
     
     for csv_file in csv_files:
         try:
@@ -142,12 +142,10 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     
     pdb_files = glob(os.path.join(out_dir, "*.pdb")) + glob(os.path.join(out_dir, "*.cif"))
     pdb_baseid = {os.path.basename(f).split('.pdb')[0] for f in pdb_files}
-    pdb_baseid = [f"{f}.pdb" for f in pdb_baseid]
-    # pdb_baseid = {os.path.basename(f).replace('.', '_') for f in pdb_files}
-    
-    csv_baseid = input_csv['name'].apply(lambda x: x.split('.pdb')[0]).drop_duplicates(inplace=False).apply(lambda x: x+'.pdb')
-    esm_csv = input_csv[input_csv['name'].isin(csv_baseid)]
-    esm_csv = esm_csv[~esm_csv['name'].isin(pdb_baseid)]
+    csv_baseid = set(input_csv['name'].apply(lambda x: x.split('.pdb')[0]))
+
+    esm_csv = input_csv[input_csv['name'].str.startswith(csv_baseid)]
+    esm_csv = esm_csv[~esm_csv['name'].str.startswith(pdb_baseid)]
     
     all_sequences = list(zip(esm_csv['name'], esm_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
@@ -226,5 +224,5 @@ if __name__ == '__main__':
     main()
 
 '''
-python csv_dataloader.py --csv_dir [path to csv files] --pdb_dir [path to cif/pdb files: output directory] --max_tokens_per_batch [] --chunk_size [] --
+python csv_dataloader.py --csv_dir [path to csv files] --pdb_dir [path to cif/pdb files: output directory] --max_tokens_per_batch [] --chunk_size [] --num_recycle
 '''
