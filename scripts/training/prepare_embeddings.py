@@ -53,12 +53,11 @@ def main():
                 rep = esm.inverse_folding.util.get_encoder_output(esm_model, alphabet, coords)
                 esm_if1 = rep.detach().cpu() # [L, 512]
 
-                # file_base_name = os.path.splitext(os.path.basename(pdb_path))[0]
                 file_base_name = os.path.basename(pdb_path).split(".cif")[0].split(".pdb")[0]
                 matched_rows = processed_csv_df[processed_csv_df['name'].str.startswith(file_base_name)]
-                for row in matched_rows.iterrows():
-                    ptname = row['name']
-                    seq = row['aa_seq']
+                for row in matched_rows.itertuples(index=False):
+                    ptname = row.name
+                    seq = row.aa_seq
 
                     # 3. ProtT5 Embedding
                     clean_seq = seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
