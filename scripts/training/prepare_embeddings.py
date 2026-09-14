@@ -74,9 +74,9 @@ def main():
                     # 4. Save Data
                     pt_data = {
                         'name': ptname,
-                        'seq': seq,
-                        'prott5': prott5,
-                        'esm_if1': esm_if1,
+                        'seq': seq, # int
+                        'prott5': prott5, # int
+                        'esm_if1': esm_if1, # int
                         'CA': torch.tensor(coords[:, 2]), # CA atoms
                         'dG': torch.tensor([0.0]) # Placeholder, replace if you have labels
                     }

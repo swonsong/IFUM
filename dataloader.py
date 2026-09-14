@@ -30,9 +30,9 @@ from esm.models.esmfold2 import (
 from glob import glob
 from tqdm import tqdm
 import argparse
-from pathlib import Path
 import sys
 import os
+from pathlib import Path
 import warnings
 import time
 import typing as T
@@ -91,7 +91,7 @@ def dna_to_protein(dna_sequence):
 
 def process_csv_files(csv_dir):
     csv_files = glob(os.path.join(csv_dir, "*.csv"))
-    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG'])
+    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG']) # placehold
     
     for csv_file in csv_files:
         try:
@@ -104,16 +104,12 @@ def process_csv_files(csv_dir):
             logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'/'dna_seq'. Found: {list(file.columns)}")
             continue
 
-        # file['name'] = file['name'].str.replace('.', '_', regex=False)
         file['name'] = file['name'].str.replace('|', ':', regex=False)
-        
         if 'aa_seq' not in file.columns:
             file['aa_seq'] = file['dna_seq'].apply(dna_to_protein)
         if 'deltaG' not in file.columns:
             file['deltaG'] = None
-
         processed_csv = pd.concat([processed_csv, file[['name', 'aa_seq', 'deltaG']]], ignore_index=True)
-
     def clean_seq(input_seq:str):
         input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
         return input_seq
@@ -141,11 +137,10 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     logger.info(f"Reading sequences from {input_csv}")
     
     pdb_files = glob(os.path.join(out_dir, "*.pdb")) + glob(os.path.join(out_dir, "*.cif"))
-    pdb_baseid = tuple({os.path.basename(f).split('.pdb')[0] for f in pdb_files})
-    csv_baseid = tuple(set(input_csv['name'].apply(lambda x: x.split('.pdb')[0])))
+    pdb_baseid = set(os.path.basename(f).split(".pdb")[0] for f in pdb_files)
 
-    esm_csv = input_csv[input_csv['name'].str.startswith(csv_baseid)]
-    esm_csv = esm_csv[~esm_csv['name'].str.startswith(pdb_baseid)]
+    esm_csv = input_csv[~input_csv['name'].isin(pdb_baseid)]
+    esm_csv = esm_csv[esm_csv['name'].endswith(".pdb")]
     
     all_sequences = list(zip(esm_csv['name'], esm_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
