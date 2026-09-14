@@ -113,7 +113,7 @@ def process_csv_files(csv_dir):
     def clean_seq(input_seq:str):
         input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
         return input_seq
-    processed_csv['aa_seq'] = processed_csv['aa_seq'].apply(clean_seq)
+    processed_csv['aa_seq'] = processed_csv['aa_seq'].str.upper().apply(clean_seq)
     processed_csv = processed_csv.drop_duplicates(subset=['aa_seq'], keep='first')
     return processed_csv
 
