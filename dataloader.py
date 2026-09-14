@@ -137,11 +137,13 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     logger.info(f"Reading sequences from {input_csv}")
     
     pdb_files = glob(os.path.join(out_dir, "*.pdb")) + glob(os.path.join(out_dir, "*.cif"))
-    pdb_baseid = set(os.path.basename(f).split(".pdb")[0] for f in pdb_files)
-
-    esm_csv = input_csv[~input_csv['name'].isin(pdb_baseid)]
-    esm_csv = esm_csv[esm_csv['name'].endswith(".pdb")]
+    pdb_baseid = set(os.path.basename(f).split(".cif")[0].split(".pdb")[0] for f in pdb_files)
     
+    input_csv['baseid'] = input_csv['name'].apply(lambda x: x.split(".pdb")[0])
+    skip = input_csv['baseid'].isin(pdb_baseid)
+    esm_csv = input_csv[~skip]
+    esm_csv = esm_csv.sort_values(by='name').drop_duplicates(subset=['baseid'], keep='first')
+        
     all_sequences = list(zip(esm_csv['name'], esm_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
