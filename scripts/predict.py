@@ -94,7 +94,7 @@ def create_arg_parser():
     return parser
 
 # --- Data Preparation Functions ---
-def create_batched_sequence_datasest(
+def create_batched_sequence_datasets(
     sequences: T.List[T.Tuple[str, str]], max_tokens_per_batch: int = 1024
 ) -> T.Generator[T.Tuple[T.List[str], T.List[str]], None, None]:
     """Batches sequences to avoid OOM during inference."""
@@ -118,7 +118,7 @@ def run_esmfold(seq_path, out_dir, device, num_recycles=None, max_tokens_per_bat
     model.eval()
     model.set_chunk_size(chunk_size)
     logger.info("Starting Predictions using ESMFold")
-    batched_sequences = create_batched_sequence_datasest(all_sequences, max_tokens_per_batch)
+    batched_sequences = create_batched_sequence_datasets(all_sequences, max_tokens_per_batch)
     num_completed, num_sequences = 0, len(all_sequences)
 
     for headers, sequences in batched_sequences:
