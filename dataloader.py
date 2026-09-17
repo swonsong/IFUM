@@ -79,7 +79,7 @@ def dna_to_protein(dna_sequence):
     'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
     } # *: Stop Codons
     
-    dna_sequence = dna_sequence.upper()
+    dna_sequence = dna_sequence.str.upper()
     protein_sequence = []
 
     for i in range(0, len(dna_sequence) - 2, 3):
@@ -118,7 +118,7 @@ def process_csv_files(csv_dir):
     return processed_csv
 
 def create_batched_sequence_datasets(
-    sequences: T.List[T.Tuple[str, str]], 
+    sequences: T.List[T.Tuple[str, str]],
     max_tokens_per_batch: int = 1024
 ) -> T.Generator[T.Tuple[T.List[str], T.List[str]], None, None]:
     """Batches sequences to avoid OOM during inference."""
