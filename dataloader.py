@@ -17,7 +17,6 @@ write dG.csv file, [name, deltaG]columns in cif/pdb directory
 import pandas as pd
 import torch
 from torch import nn
-import esm
 from esm.models.esmfold2 import (
     DNAInput,
     ESMFold2InputBuilder,
@@ -27,6 +26,7 @@ from esm.models.esmfold2 import (
     ProteinInput,
     StructurePredictionInput,
 )
+# from transformers.models.esmfold2.modeling_esmfold2 import EsmFold2Model
 from glob import glob
 from tqdm import tqdm
 import argparse
@@ -149,6 +149,7 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
     
     logger.info("Loading ESMFold model...")
     model = EsmFold2Model.from_pretrained("biohub/ESMFold2", device=str(device)).eval()
+    # model = EsmFold2Model.from_pretrained("biohub/ESMFold2", device_map='auto').eval()
 
     if chunk_size is not None:
         model.set_chunk_size(chunk_size)
@@ -162,17 +163,20 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
             start = timer()
             try:
                 spi = StructurePredictionInput(sequences=[ProteinInput(id="A", sequence=seq)])
-                loops = num_recycles if num_recycles is not None else 20    
+                loops = num_recycles if num_recycles is not None else 20
                 
                 result = ESMFold2InputBuilder().fold(
                     model, spi, num_loops=loops, num_sampling_steps=100, num_diffusion_samples=1, seed=0
                     )
                 
+                # pdb_string = model.infer_protein_as_pdb(seq, num_loops=loops, num_sampling_steps=100)
+                
                 tottime = timer() - start
                 output_file = Path(out_dir) / f"{header}.cif"
                 with open(output_file, "w") as f:
                     f.write(result.complex.to_mmcif())
-                
+                    # f.write(pdb_string)
+                    
                 num_completed += 1
                 logger.info(f"Predicted structure for {header} in {tottime/len(headers):0.1f}s. ({num_completed}/{num_sequences})")
 
