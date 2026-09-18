@@ -1,19 +1,3 @@
-'''
-# pseudocode
-parse csv directory(input) & cif/pdb directory(output)
-for csv files in csv directory:
-    get [name, aa_seq, deltaG]columns
-    if [aa_seq]column not exist: convert [dna_seq]column to [aa_seq]column
-    concat
-replace sequences(U,Z,O) to X in concatenated dataframe
-remove duplicated sequences by [aa_seq]
-change format(dataframe to List[Tuple[str, str]])
-apply "create_batched_sequence_datasets()"
-run esmfold rowwise for concatenated dataframe
-write [name].cif/.pdb file, 3d atom coordinate
-write dG.csv file, [name, deltaG]columns in cif/pdb directory
-'''
-
 import pandas as pd
 import torch
 from torch import nn
@@ -40,7 +24,7 @@ import logging
 from timeit import default_timer as timer
 import gc
 
-# Logger Setup
+'''Logger Setup'''
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s | %(message)s", datefmt="%y/%m/%d %H:%M:%S")
@@ -52,14 +36,14 @@ warnings.filterwarnings('ignore')
 
 def get_args():
     parser = argparse.ArgumentParser(description='Generate .cif/.pdb files from CSV directory')
-    parser.add_argument('--csv_dir', type=str, required=True, help='Directory containing .csv files') # megascale & mgnify csv files
-    parser.add_argument('--pdb_dir', type=str, required=True, help='Output directory for .cif/.pdb files') # fixed atom 3D coordinate
+    parser.add_argument('--csv_dir', type=str, required=True, help='Directory containing .csv files')
+    parser.add_argument('--pdb_dir', type=str, required=True, help='Output directory for .cif/.pdb files')
     parser.add_argument('--num_recycles', type=int, default=None, help='Number of recycles for ESMFold')
     parser.add_argument('--chunk_size', type=int, default=None, help='Chunk size for ESMFold optimization')
     parser.add_argument('--max_tokens_per_batch', type=int, default=1024, help='Max tokens per batch')
     return parser.parse_args()
 
-def dna_to_protein(dna_sequence):
+def dna_to_protein(dna_sequence:str):
     codon_table = {
     'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M',
     'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T',
@@ -79,7 +63,7 @@ def dna_to_protein(dna_sequence):
     'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
     } # *: Stop Codons
     
-    dna_sequence = str(dna_sequence).upper()
+    dna_sequence = dna_sequence.upper()
     protein_sequence = []
 
     for i in range(0, len(dna_sequence) - 2, 3):
@@ -89,33 +73,51 @@ def dna_to_protein(dna_sequence):
 
     return "".join(protein_sequence)
 
-def process_csv_files(csv_dir):
-    csv_files = glob(os.path.join(csv_dir, "*.csv"))
-    processed_csv = pd.DataFrame(columns=['name','aa_seq','deltaG']) # placehold
-    
-    for csv_file in csv_files:
-        try:
-            file = pd.read_csv(csv_file)
-        except Exception as e:
-            logger.error(f"Failed to read CSV {csv_file}: {e}")
-            continue
-        logger.info(f"Processing CSV file: {csv_file}")
-        if 'name' not in file.columns or ('aa_seq' not in file.columns and 'dna_seq' not in file.columns):
-            logger.warning(f"CSV file {csv_file} is missing required columns 'name' or 'aa_seq'/'dna_seq'. Found: {list(file.columns)}")
-            continue
+def clean_seq(input_seq:str):
+    input_seq = input_seq.upper().replace('U', 'X').replace('Z', 'X').replace('O', 'X')
+    return input_seq
 
-        file['name'] = file['name'].str.replace('|', ':', regex=False)
-        if 'aa_seq' not in file.columns:
-            file['aa_seq'] = file['dna_seq'].apply(dna_to_protein)
-        if 'deltaG' not in file.columns:
-            file['deltaG'] = None
-        processed_csv = pd.concat([processed_csv, file[['name', 'aa_seq', 'deltaG']]], ignore_index=True)
-    def clean_seq(input_seq:str):
-        input_seq = input_seq.replace('U', 'X').replace('Z', 'X').replace('O', 'X')
-        return input_seq
-    processed_csv['aa_seq'] = processed_csv['aa_seq'].str.upper().apply(clean_seq)
-    processed_csv = processed_csv.drop_duplicates(subset=['aa_seq'], keep='first')
+def process_csv(csv_dir):
+    mega1 = glob(os.path.join(csv_dir, "Tsuboyama2023_Dataset1_20230416.csv"))
+    mega2 = glob(os.path.join(csv_dir, "Tsuboyama2023_Dataset2_Dataset3_20230416.csv"))
+    mgnify = glob(os.path.join(csv_dir, "230515_K50dG_dmsv4_dmsv5_dmsv7_concat260429.csv"))
+    processed_csv = pd.DataFrame(columns=['name','aa_seq','dG', 'WT_name', 'mut_type'])
+    
+    '''prep'''
+    condition = mega1['name'].str.contains('scramble') & (mega1['deltaG'] <= 0.5)
+    mega1 = mega1.loc[condition, ['name', 'dna_seq', 'deltaG']].copy()
+    
+    mega1['dna_seq'] = mega1['dna_seq'].str.apply(dna_to_protein)
+    mega1.rename(columns={'dna_seq':'aa_seq', 'deltaG':'dG'}, inplace=True)
+
+    mega1['WT_name'] = mega1['name']
+    mega1['mut_type'] = 'wt'
+    
+    mega2 = mega2[['name', 'aa_seq', 'dG_ML', 'WT_name', 'mut_type']]
+    mega2['dG_ML'] = pd.to_numeric(mega2['dG_ML'], errors='coerce')
+    mega2 = mega2.dropna(subset=['dG_ML'])
+    mega2.rename(columns={'dG_ML':'dG'})
+    
+    mgnify
+
+    processed_csv = pd.concat([processed_csv, mega1, mega2, mgnify], ignore_index=True)
+    processed_csv['name'] = processed_csv['name'].str.replace('|', ':', regex=False) # for EA|run*
+    processed_csv['aa_seq'] = processed_csv['aa_seq'].str.apply(clean_seq)
+
     return processed_csv
+
+def esm_run_prep(input_csv, pdb_dir):
+    '''input_csv = processed_csv, pdb_dir = args.pdb_dir'''
+    pdb_files = glob(os.path.join(pdb_dir, "*.pdb")) + glob(os.path.join(pdb_dir, "*.cif"))
+    pdb_baseid = set(os.path.basename(f).split(".cif")[0] for f in pdb_files)
+
+    input_csv = input_csv[input_csv['mut_type'] == 'wt']
+    input_csv = input_csv.sort_values(by='name').drop_duplicates(subset=['aa_seq'], keep='first')
+    
+    skip = input_csv['WT_name'].isin(pdb_baseid)
+    input_csv = input_csv.loc[~skip, ['name', 'aa_seq']].copy()
+
+    return input_csv
 
 def create_batched_sequence_datasets(
     sequences: T.List[T.Tuple[str, str]], 
@@ -133,18 +135,10 @@ def create_batched_sequence_datasets(
     yield batch_headers, batch_sequences
 
 def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_batch=1024, chunk_size=None):
-    """Runs ESMFold2 prediction on a processed csv file for not in .pdb list"""
+    """Runs ESMFold2 prediction on a processed csv file"""
     logger.info(f"Reading sequences from {input_csv}")
     
-    pdb_files = glob(os.path.join(out_dir, "*.pdb")) + glob(os.path.join(out_dir, "*.cif"))
-    pdb_baseid = set(os.path.basename(f).split(".cif")[0].split(".pdb")[0] for f in pdb_files)
-    
-    input_csv['baseid'] = input_csv['name'].apply(lambda x: x.split(".pdb")[0])
-    skip = input_csv['baseid'].isin(pdb_baseid)
-    esm_csv = input_csv[~skip]
-    esm_csv = esm_csv.sort_values(by='name').drop_duplicates(subset=['baseid'], keep='first')
-        
-    all_sequences = list(zip(esm_csv['name'], esm_csv['aa_seq']))
+    all_sequences = list(zip(input_csv['name'], input_csv['aa_seq']))
     logger.info(f"Loaded {len(all_sequences)} sequences.")
     
     logger.info("Loading ESMFold model...")
@@ -168,9 +162,8 @@ def run_esmfold(input_csv, out_dir, device, num_recycles=None, max_tokens_per_ba
                 result = ESMFold2InputBuilder().fold(
                     model, spi, num_loops=loops, num_sampling_steps=100, num_diffusion_samples=1, seed=0
                     )
-                
                 # pdb_string = model.infer_protein_as_pdb(seq, num_loops=loops, num_sampling_steps=100)
-                
+
                 tottime = timer() - start
                 output_file = Path(out_dir) / f"{header}.cif"
                 with open(output_file, "w") as f:
@@ -200,19 +193,20 @@ def main():
     os.makedirs(args.csv_dir, exist_ok=True)
     os.makedirs(args.pdb_dir, exist_ok=True)
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # apply DDP?
     logger.info(f"Using device: {device}")
     
     logger.info("--- Processing CSV files ---")
-    input_csv = process_csv_files(args.csv_dir)
-    process_csv_path = os.path.join(args.pdb_dir, "processed.csv")
-    input_csv.to_csv(process_csv_path)
-    logger.info(f"processed csv data saved to {process_csv_path}")
+    processed_csv = process_csv(args.csv_dir)
+    processed_csv_path = os.path.join(args.pdb_dir, "processed.csv")
+    processed_csv.to_csv(processed_csv_path)
+    logger.info(f"processed csv data saved to {processed_csv_path}")
 
+    esm_run_csv = esm_run_prep(processed_csv, args.pdb_dir)
     # run ESMFold
     logger.info("--- Running ESMFold prediction ---")
     run_esmfold(
-        input_csv=input_csv,
+        input_csv=esm_run_csv,
         out_dir=args.pdb_dir,
         device=device,
         num_recycles=args.num_recycles,
